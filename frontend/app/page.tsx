@@ -148,6 +148,13 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
+  function clearPolling() {
+    if (pollTimeoutRef.current) {
+      window.clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+  }
+
   async function handleProbe(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!url) return;
@@ -176,20 +183,57 @@ export default function HomePage() {
       }
 
       const data: ProbeResult = await response.json();
-      setProbeResult(data);
+      const sortedFormats = [...data.formats].sort((a, b) => {
+        const aHasAV = Number(a.has_audio && a.has_video);
+        const bHasAV = Number(b.has_audio && b.has_video);
+        if (aHasAV !== bHasAV) return bHasAV - aHasAV;
+        const aHasAudio = Number(a.has_audio);
+        const bHasAudio = Number(b.has_audio);
+        if (aHasAudio !== bHasAudio) return bHasAudio - aHasAudio;
+        return 0;
+      });
+      const nextProbe: ProbeResult = { ...data, formats: sortedFormats };
+      setProbeResult(nextProbe);
       const audioFriendly =
-        data.formats.find((format) => format.has_audio && format.has_video) ??
-        data.formats.find((format) => format.has_audio);
+        sortedFormats.find((format) => format.has_audio && format.has_video) ??
+        sortedFormats.find((format) => format.has_audio);
       const initialFormat =
         data.default_format_id ??
         audioFriendly?.format_id ??
-        data.formats?.[0]?.format_id ??
+        sortedFormats?.[0]?.format_id ??
         null;
-      setSelectedFormat(initialFormat);
+      setSelectedFormat(sortedFormats?.[0]?.format_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
       setLoadingProbe(false);
+    }
+  }
+
+  function handleReset() {
+    clearPolling();
+    if (fetchingFileRef.current) {
+      fetchingFileRef.current = false;
+    }
+    setUrl("");
+    setProbeResult(null);
+    setSelectedFormat(null);
+    setTaskStatus(null);
+    setTaskId(null);
+    setError(null);
+    setDownloading(false);
+    setLoadingProbe(false);
+  }
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setUrl(text.trim());
+      }
+    } catch (err) {
+      console.error("Clipboard read failed", err);
+      setError("Unable to read from clipboard");
     }
   }
 
@@ -350,17 +394,39 @@ export default function HomePage() {
         <form onSubmit={handleProbe} className="form">
           <label htmlFor="url">Media URL</label>
           <div className="row">
-            <input
-              id="url"
-              type="url"
-              placeholder="https://www.youtube.com/watch?v=123"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              required
-            />
+            <div className="input-container">
+              <input
+                id="url"
+                type="url"
+                placeholder="https://www.youtube.com/watch?v=123"
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                onClick={handlePaste}
+                className="icon-button inline"
+                title="Paste URL from clipboard"
+                aria-label="Paste URL from clipboard"
+              >
+                📋
+              </button>
+            </div>
             <button type="submit" disabled={loadingProbe} className="secondary">
-              {loadingProbe ? "Checking..." : "Check"}
+              {loadingProbe ? "Checking url..." : "Download"}
             </button>
+            {probeResult && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="icon-button"
+                title="Reset form"
+                aria-label="Reset form"
+              >
+                ⟲
+              </button>
+            )}
           </div>
         </form>
 
@@ -387,11 +453,14 @@ export default function HomePage() {
                 </dl>
               </div>
               {probeResult.thumbnail && (
-                <img
-                  src={probeResult.thumbnail}
-                  alt="Thumbnail"
-                  className="thumbnail"
-                />
+                <div className="thumbnail-wrapper">
+                  <img
+                    src={probeResult.thumbnail}
+                    alt="Thumbnail"
+                    className="thumbnail"
+                    loading="lazy"
+                  />
+                </div>
               )}
             </div>
 
@@ -416,14 +485,16 @@ export default function HomePage() {
           </section>
         )}
 
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={disableDownload}
-          className="download"
-        >
-          {downloading ? "Downloading..." : "Download"}
-        </button>
+        {probeResult && (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={disableDownload}
+            className="download"
+          >
+            {downloading ? "Downloading..." : "Download"}
+          </button>
+        )}
 
         {taskStatus && (
           <section className="progress">
@@ -498,10 +569,14 @@ export default function HomePage() {
           gap: 0.75rem;
           flex-wrap: wrap;
         }
-        input {
+        .input-container {
+          position: relative;
           flex: 1;
           min-width: 240px;
-          padding: 0.75rem;
+        }
+        input {
+          width: 100%;
+          padding: 0.75rem 2.75rem 0.75rem 0.75rem;
           border: 1px solid #cbd5f5;
           border-radius: 12px;
           font-size: 1rem;
@@ -523,6 +598,29 @@ export default function HomePage() {
         }
         button.secondary {
           background: #0f172a;
+        }
+        .icon-button {
+          width: 44px;
+          padding: 0.75rem;
+          background: transparent;
+          border: 1px solid #cbd5f5;
+          color: #0f172a;
+          font-size: 1.1rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .icon-button.inline {
+          position: absolute;
+          top: 0;
+          right: 0;
+          height: 100%;
+          border-left: none;
+          border-top-left-radius: 0;
+          border-bottom-left-radius: 0;
+        }
+        .icon-button:hover {
+          background: rgba(15, 23, 42, 0.06);
         }
         button[disabled] {
           cursor: not-allowed;
@@ -558,11 +656,27 @@ export default function HomePage() {
           display: flex;
           gap: 1rem;
           align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .thumbnail-wrapper {
+          flex-shrink: 0;
+          width: 200px;
+          height: 120px;
+          border-radius: 12px;
+          overflow: hidden;
+          position: relative;
         }
         .thumbnail {
-          width: 200px;
-          border-radius: 12px;
+          width: 100%;
+          height: 100%;
           object-fit: cover;
+          display: block;
+        }
+        @media (max-width: 600px) {
+          .thumbnail-wrapper {
+            width: 100%;
+            height: 180px;
+          }
         }
         dl {
           display: grid;
