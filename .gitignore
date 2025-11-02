@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.python-version
+.venv/
+env/
+venv/
+
+# Pip / Poetry
+pip-log.txt
+pip-delete-this-directory.txt
+.pipenv
+poetry.lock
+
+# FastAPI / Uvicorn
+*.log
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build artifacts
+dist/
+build/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Coverage / testing
+.hypothesis/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
